@@ -331,12 +331,8 @@ pub async fn serve_agent_in_process(
 #[allow(dead_code)]
 pub async fn spawn_acp_server_in_process(
     openai_base_url: &str,
-    builtins: &[String],
     data_root: &std::path::Path,
-    goose_mode: GooseMode,
-    provider_factory: Option<AcpProviderFactory>,
-    current_model: &str,
-    disable_session_naming: bool,
+    config: &TestConnectionConfig,
 ) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
     fs::create_dir_all(data_root).unwrap();
     // TODO: Paths::in_state_dir is global, ignoring per-test data_root
@@ -346,14 +342,14 @@ pub async fn spawn_acp_server_in_process(
         fs::write(
             &config_path,
             format!(
-                "GOOSE_MODEL: {current_model}\nGOOSE_PROVIDER: openai\nGOOSE_MODE: {}\n",
-                goose_mode
+                "GOOSE_MODEL: {}\nGOOSE_PROVIDER: openai\nGOOSE_MODE: {}\n",
+                config.current_model, config.goose_mode
             ),
         )
         .unwrap();
     }
     write_global_test_config(&config_path, openai_base_url);
-    let provider_factory = provider_factory.unwrap_or_else(|| {
+    let provider_factory = config.provider_factory.clone().unwrap_or_else(|| {
         let base_url = openai_base_url.to_string();
         Arc::new(move |_provider_name, _extensions, _working_dir| {
             let base_url = base_url.clone();
@@ -370,15 +366,17 @@ pub async fn spawn_acp_server_in_process(
         })
     });
 
+    let scheduler = (!config.disable_platform_tools)
+        .then(|| Arc::new(FixtureScheduler::new()) as Arc<dyn SchedulerTrait>);
     let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
         provider_factory,
-        builtins: builtins.to_vec(),
+        builtins: config.builtins.clone(),
         data_dir: data_root.to_path_buf(),
         config_dir: data_root.to_path_buf(),
-        disable_session_naming,
+        disable_session_naming: config.disable_session_naming,
         goose_platform: GoosePlatform::GooseCli,
         additional_source_roots: Vec::new(),
-        scheduler: Arc::new(FixtureScheduler::new()),
+        scheduler,
     })
     .await
     .unwrap();
@@ -699,6 +697,7 @@ pub struct TestConnectionConfig {
     // The model the server-side provider starts with. Defaults to TEST_MODEL.
     pub current_model: String,
     pub disable_session_naming: bool,
+    pub disable_platform_tools: bool,
 }
 
 impl Default for TestConnectionConfig {
@@ -715,6 +714,7 @@ impl Default for TestConnectionConfig {
             terminal: None,
             current_model: TEST_MODEL.to_string(),
             disable_session_naming: true,
+            disable_platform_tools: false,
         }
     }
 }

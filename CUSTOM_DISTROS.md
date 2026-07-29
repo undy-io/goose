@@ -306,6 +306,8 @@ export GOOSE_BUNDLE_NAME="InsightStream-goose"
 
 goose provides two ACP transport options for building custom clients:
 
+Hosts that supply their complete tool surface through client-provided MCP servers can disable goose-owned platform tools with `--no-platform-tools`. This removes tools such as schedule management without affecting MCP servers attached by the client. Built-in extensions remain controlled separately with `--with-builtin`.
+
 ### Option 1: ACP HTTP/WebSocket (`goose serve`)
 
 Use `goose serve` for process-separated integrations such as web apps, desktop shells, and other clients:
@@ -313,6 +315,9 @@ Use `goose serve` for process-separated integrations such as web apps, desktop s
 ```bash
 # Start the server
 GOOSE_SERVER__SECRET_KEY='a-long-random-secret' goose serve
+
+# Disable goose-owned platform tools
+GOOSE_SERVER__SECRET_KEY='a-long-random-secret' goose serve --no-platform-tools
 
 # ACP endpoint available at http://localhost:3284/acp
 ```
@@ -342,6 +347,9 @@ ACP provides:
 ```bash
 # Run goose as an ACP server on stdio
 goose acp --with-builtin developer,memory
+
+# Expose client-provided MCP tools without goose-owned platform tools
+goose acp --no-platform-tools
 
 # Or programmatically
 cargo run -p goose-cli -- acp --with-builtin developer

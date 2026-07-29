@@ -838,6 +838,12 @@ enum Command {
             value_delimiter = ','
         )]
         builtins: Vec<String>,
+
+        #[arg(
+            long,
+            help = "Disable goose-owned platform tools such as schedule management"
+        )]
+        no_platform_tools: bool,
     },
 
     /// Start ACP server over HTTP and WebSocket
@@ -870,6 +876,12 @@ enum Command {
             action = clap::ArgAction::Append
         )]
         builtins: Vec<String>,
+
+        #[arg(
+            long,
+            help = "Disable goose-owned platform tools such as schedule management"
+        )]
+        no_platform_tools: bool,
 
         #[arg(
             long = "dangerously-unauthenticated",
@@ -1386,6 +1398,7 @@ struct ServeCommandArgs {
     tls_key_path: Option<String>,
     platform: ServePlatform,
     builtins: Vec<String>,
+    no_platform_tools: bool,
     dangerously_unauthenticated: bool,
     allowed_origins: Vec<String>,
 }
@@ -1407,6 +1420,7 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         tls_key_path,
         platform,
         builtins,
+        no_platform_tools,
         dangerously_unauthenticated,
         allowed_origins,
     } = args;
@@ -1429,13 +1443,19 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         })
         .collect();
 
-    let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
+    let server = AcpServer::new(AcpServerFactoryConfig {
         builtins,
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
         goose_platform: platform.into(),
         additional_source_roots,
-    }));
+    });
+    let server = if no_platform_tools {
+        server.without_platform_tools()
+    } else {
+        server
+    };
+    let server = Arc::new(server);
     let env_secret = std::env::var(GOOSE_SERVER_SECRET_KEY_ENV)
         .ok()
         .map(|secret| secret.trim().to_string())
@@ -2228,7 +2248,10 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,
         Some(Command::Info { verbose, check }) => handle_info(verbose, check).await,
         Some(Command::Mcp { server }) => handle_mcp_command(server).await,
-        Some(Command::Acp { builtins }) => goose::acp::server::run(builtins).await,
+        Some(Command::Acp {
+            builtins,
+            no_platform_tools,
+        }) => goose::acp::server::run_with_platform_tools(builtins, !no_platform_tools).await,
         Some(Command::Serve {
             host,
             port,
@@ -2237,6 +2260,7 @@ pub async fn cli() -> anyhow::Result<()> {
             tls_key_path,
             platform,
             builtins,
+            no_platform_tools,
             dangerously_unauthenticated,
             allowed_origins,
         }) => {
@@ -2248,6 +2272,7 @@ pub async fn cli() -> anyhow::Result<()> {
                 tls_key_path,
                 platform,
                 builtins,
+                no_platform_tools,
                 dangerously_unauthenticated,
                 allowed_origins,
             })
@@ -2475,6 +2500,51 @@ mod tests {
                 );
             }
             _ => panic!("expected serve command"),
+        }
+    }
+
+    #[test]
+    fn serve_command_accepts_no_platform_tools_flag() {
+        let cli =
+            Cli::try_parse_from(["goose", "serve", "--no-platform-tools"]).expect("parse failed");
+
+        match cli.command {
+            Some(Command::Serve {
+                no_platform_tools, ..
+            }) => assert!(no_platform_tools),
+            _ => panic!("expected serve command"),
+        }
+    }
+
+    #[test]
+    fn platform_tools_remain_enabled_by_default_for_acp_and_serve() {
+        let acp = Cli::try_parse_from(["goose", "acp"]).expect("parse failed");
+        match acp.command {
+            Some(Command::Acp {
+                no_platform_tools, ..
+            }) => assert!(!no_platform_tools),
+            _ => panic!("expected acp command"),
+        }
+
+        let serve = Cli::try_parse_from(["goose", "serve"]).expect("parse failed");
+        match serve.command {
+            Some(Command::Serve {
+                no_platform_tools, ..
+            }) => assert!(!no_platform_tools),
+            _ => panic!("expected serve command"),
+        }
+    }
+
+    #[test]
+    fn acp_command_accepts_no_platform_tools_flag() {
+        let cli =
+            Cli::try_parse_from(["goose", "acp", "--no-platform-tools"]).expect("parse failed");
+
+        match cli.command {
+            Some(Command::Acp {
+                no_platform_tools, ..
+            }) => assert!(no_platform_tools),
+            _ => panic!("expected acp command"),
         }
     }
 

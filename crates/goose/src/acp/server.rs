@@ -185,7 +185,7 @@ pub struct GooseAcpAgentOptions {
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
     pub additional_source_roots: Vec<SourceRoot>,
-    pub scheduler: Arc<dyn SchedulerTrait>,
+    pub scheduler: Option<Arc<dyn SchedulerTrait>>,
 }
 
 pub struct GooseAcpAgent {
@@ -604,7 +604,7 @@ impl GooseAcpAgent {
         let agent_config = AgentConfig::new(
             Arc::clone(&session_manager),
             Arc::clone(&permission_manager),
-            Some(options.scheduler),
+            options.scheduler,
             Config::global().get_goose_mode().unwrap_or_default(),
             options.disable_session_naming,
             options.goose_platform.clone(),
@@ -2324,6 +2324,13 @@ impl agent_client_protocol::ConnectTo<Client> for GooseAgentConnection {
 }
 
 pub async fn run(builtins: Vec<String>) -> Result<()> {
+    run_with_platform_tools(builtins, true).await
+}
+
+pub async fn run_with_platform_tools(
+    builtins: Vec<String>,
+    platform_tools_enabled: bool,
+) -> Result<()> {
     info!("listening on stdio");
 
     let outgoing = tokio::io::stdout().compat_write();
@@ -2338,6 +2345,11 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
             additional_source_roots: Vec::new(),
         },
     );
+    let server = if platform_tools_enabled {
+        server
+    } else {
+        server.without_platform_tools()
+    };
     let agent = server.create_agent().await?;
     serve(agent, incoming, outgoing).await
 }

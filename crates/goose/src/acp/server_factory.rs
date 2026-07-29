@@ -19,6 +19,7 @@ pub struct AcpServerFactoryConfig {
 pub struct AcpServer {
     config: AcpServerFactoryConfig,
     scheduler: OnceCell<Arc<dyn SchedulerTrait>>,
+    platform_tools_enabled: bool,
 }
 
 impl AcpServer {
@@ -26,7 +27,13 @@ impl AcpServer {
         Self {
             config,
             scheduler: OnceCell::new(),
+            platform_tools_enabled: true,
         }
+    }
+
+    pub fn without_platform_tools(mut self) -> Self {
+        self.platform_tools_enabled = false;
+        self
     }
 
     async fn scheduler(&self) -> Result<Arc<dyn SchedulerTrait>> {
@@ -45,10 +52,17 @@ impl AcpServer {
             .cloned()
     }
 
+    async fn configured_scheduler(&self) -> Result<Option<Arc<dyn SchedulerTrait>>> {
+        if !self.platform_tools_enabled {
+            return Ok(None);
+        }
+        self.scheduler().await.map(Some)
+    }
+
     pub async fn create_agent(&self) -> Result<Arc<GooseAcpAgent>> {
         let config = crate::config::Config::global();
         let disable_session_naming = config.get_goose_disable_session_naming().unwrap_or(false);
-        let scheduler = self.scheduler().await?;
+        let scheduler = self.configured_scheduler().await?;
 
         let provider_factory: AcpProviderFactory =
             Arc::new(move |provider_name, extensions, working_dir| {
@@ -81,5 +95,38 @@ impl AcpServer {
         info!("Created new ACP agent");
 
         Ok(Arc::new(agent))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_server(data_dir: std::path::PathBuf) -> AcpServer {
+        AcpServer::new(AcpServerFactoryConfig {
+            builtins: Vec::new(),
+            config_dir: data_dir.join("config"),
+            data_dir,
+            goose_platform: GoosePlatform::GooseCli,
+            additional_source_roots: Vec::new(),
+        })
+    }
+
+    #[tokio::test]
+    async fn platform_tools_are_enabled_by_default() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let server = test_server(data_dir.path().to_path_buf());
+
+        assert!(server.configured_scheduler().await.unwrap().is_some());
+        assert!(server.scheduler.get().is_some());
+    }
+
+    #[tokio::test]
+    async fn disabling_platform_tools_does_not_initialize_the_scheduler() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let server = test_server(data_dir.path().to_path_buf()).without_platform_tools();
+
+        assert!(server.configured_scheduler().await.unwrap().is_none());
+        assert!(server.scheduler.get().is_none());
     }
 }

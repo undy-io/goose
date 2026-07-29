@@ -151,20 +151,11 @@ impl Connection for AcpProviderConnection {
             false => (config.data_root.clone(), None),
         };
 
+        let (transport, _handle, permission_manager) =
+            spawn_acp_server_in_process(openai.uri(), data_root.as_path(), &config).await;
+
         let goose_mode = config.goose_mode;
         let mcp_servers = config.mcp_servers;
-
-        let current_model = config.current_model.clone();
-        let (transport, _handle, permission_manager) = spawn_acp_server_in_process(
-            openai.uri(),
-            &config.builtins,
-            data_root.as_path(),
-            goose_mode,
-            config.provider_factory,
-            &current_model,
-            config.disable_session_naming,
-        )
-        .await;
 
         let cwd_path = config
             .cwd

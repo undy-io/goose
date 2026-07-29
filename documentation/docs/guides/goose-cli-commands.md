@@ -688,6 +688,10 @@ ACP is an emerging protocol specification that standardizes communication betwee
 goose acp
 ```
 
+**Options:**
+- **`--with-builtin <NAME>`**: Enable built-in extensions by name. Accepts a comma-separated list.
+- **`--no-platform-tools`**: Disable goose-owned platform tools such as schedule management. Client-supplied MCP tools remain available.
+
 :::info
 This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `goose acp` process. See [Using goose in ACP Clients](/docs/guides/acp-clients) for details.
 :::
@@ -701,6 +705,7 @@ Start goose as an Agent Client Protocol (ACP) server over HTTP and WebSocket.
 - **`--host <HOST>`**: Host to bind to. Defaults to `127.0.0.1`
 - **`--port <PORT>`**: Port to listen on. Defaults to `3284`
 - **`--with-builtin <NAME>`**: Enable built-in extensions by name. Can be passed multiple times or as a comma-separated list. Defaults to `developer` when omitted.
+- **`--no-platform-tools`**: Disable goose-owned platform tools such as schedule management. Client-supplied MCP tools remain available.
 - **`--dangerously-unauthenticated`**: Run without ACP authentication. Use only for local trusted clients.
 
 **Usage:**

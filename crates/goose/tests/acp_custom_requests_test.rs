@@ -3,7 +3,7 @@
 mod common_tests;
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, PromptRequest, SessionUpdate, StopReason, TextContent,
+    ContentBlock, McpServer, McpServerHttp, PromptRequest, SessionUpdate, StopReason, TextContent,
 };
 use common_tests::fixtures::server::AcpServerConnection;
 use common_tests::fixtures::{
@@ -14,7 +14,7 @@ use goose::acp::server::AcpProviderFactory;
 use goose::providers::base::{MessageStream, Provider};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
-use goose_test_support::{EnforceSessionId, IgnoreSessionId};
+use goose_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture};
 use serial_test::serial;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -161,6 +161,16 @@ fn collect_agent_text(updates: &[SessionUpdate]) -> String {
         .collect()
 }
 
+fn tool_names(response: &serde_json::Value) -> Vec<&str> {
+    response
+        .get("tools")
+        .and_then(|tools| tools.as_array())
+        .expect("tools should be an array")
+        .iter()
+        .filter_map(|tool| tool.get("name").and_then(|name| name.as_str()))
+        .collect()
+}
+
 #[test]
 #[serial]
 fn test_custom_get_tools() {
@@ -181,8 +191,38 @@ fn test_custom_get_tools() {
         assert!(result.is_ok(), "expected ok, got: {:?}", result);
 
         let response = result.unwrap();
-        let tools = response.get("tools").expect("missing 'tools' field");
-        assert!(tools.is_array(), "tools should be array");
+        let tool_names = tool_names(&response);
+        assert!(tool_names.contains(&"platform__manage_schedule"));
+    });
+}
+
+#[test]
+#[serial]
+fn test_custom_get_tools_without_platform_tools() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let expected_session_id = Arc::new(IgnoreSessionId);
+        let mcp = McpFixture::new(expected_session_id.clone()).await;
+        let openai = OpenAiFixture::new(vec![], expected_session_id).await;
+        let config = TestConnectionConfig {
+            mcp_servers: vec![McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp.url))],
+            disable_platform_tools: true,
+            ..Default::default()
+        };
+        let mut conn = AcpServerConnection::new(config, openai).await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let result = send_custom(
+            conn.cx(),
+            "_goose/unstable/tools/list",
+            serde_json::json!({ "sessionId": session.session_id().0 }),
+        )
+        .await
+        .expect("tool listing should succeed");
+        let tool_names = tool_names(&result);
+
+        assert!(tool_names.contains(&"mcp-fixture__get_code"));
+        assert!(!tool_names.contains(&"platform__manage_schedule"));
     });
 }
 
